@@ -1,12 +1,10 @@
 import streamlit as st
-
-from ai import analyze_mission
-from mqtt_control import publish_rover_command
+from datetime import datetime
 
 
-# --------------------------------------------------
+# =========================================================
 # 페이지 설정
-# --------------------------------------------------
+# =========================================================
 
 st.set_page_config(
     page_title="MARS-AI Rover",
@@ -15,138 +13,101 @@ st.set_page_config(
 )
 
 
-# --------------------------------------------------
+# =========================================================
+# Session State 초기화
+# =========================================================
+
+if "ai_result" not in st.session_state:
+    st.session_state.ai_result = None
+
+if "mission_history" not in st.session_state:
+    st.session_state.mission_history = []
+
+if "last_environment" not in st.session_state:
+    st.session_state.last_environment = None
+
+
+# =========================================================
 # 제목
-# --------------------------------------------------
+# =========================================================
 
 st.title("🚀 MARS-AI Rover")
-st.subheader("AI 기반 화성 탐사 로버 주행 시스템")
 
-st.markdown(
-    """
-    화성의 가상 환경을 입력하면 AI가 탐사 로버의
-    적절한 주행 방향과 속도를 판단합니다.
-
-    AI의 판단 결과는 MQTT를 통해 실제 ESP32 로버로 전달됩니다.
-    """
+st.subheader(
+    "Gemini AI 기반 화성 탐사 로버 자율주행 시스템"
 )
 
-
-# --------------------------------------------------
-# 사이드바 - 환경 설정
-# --------------------------------------------------
-
-st.sidebar.header("🪐 화성 환경 설정")
-
-terrain = st.sidebar.selectbox(
-    "지형",
-    [
-        "평지",
-        "모래",
-        "암석",
-        "자갈"
-    ]
+st.write(
+    "화성의 지형, 경사도, 배터리, 장애물 정보를 분석하여 "
+    "Gemini AI가 탐사 로버의 주행 방향과 속도를 결정하고, "
+    "USB Serial을 통해 실제 ESP32 로버를 제어하는 프로젝트입니다."
 )
-
-slope = st.sidebar.slider(
-    "경사도",
-    min_value=0,
-    max_value=30,
-    value=5,
-    step=1
-)
-
-battery = st.sidebar.slider(
-    "배터리 잔량",
-    min_value=0,
-    max_value=100,
-    value=80,
-    step=5
-)
-
-obstacle = st.sidebar.selectbox(
-    "전방 장애물",
-    [
-        "없음",
-        "있음"
-    ]
-)
-
-
-# --------------------------------------------------
-# 현재 환경 표시
-# --------------------------------------------------
-
-st.header("📡 현재 탐사 환경")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric("지형", terrain)
-
-with col2:
-    st.metric("경사도", f"{slope}°")
-
-with col3:
-    st.metric("배터리", f"{battery}%")
-
-with col4:
-    st.metric("장애물", obstacle)
 
 
 st.divider()
 
 
-# --------------------------------------------------
-# AI 분석 버튼
-# --------------------------------------------------
+# =========================================================
+# 시스템 구조
+# =========================================================
 
-if st.button(
-    "🤖 AI 탐사 판단 시작",
-    type="primary",
-    use_container_width=True
-):
+st.header("🛰️ 시스템 구조")
 
-    with st.spinner("AI가 화성 환경을 분석하고 있습니다..."):
+col1, col2, col3, col4, col5 = st.columns(5)
 
-        result = analyze_mission(
-            terrain=terrain,
-            slope=slope,
-            battery=battery,
-            obstacle=obstacle
-        )
+with col1:
+    st.markdown("### 🪐")
+    st.write("화성 환경")
 
-    if not result["success"]:
+with col2:
+    st.markdown("### 🤖")
+    st.write("Gemini AI")
 
-        st.error(result["message"])
+with col3:
+    st.markdown("### 🛡️")
+    st.write("안전 판단")
 
-    else:
+with col4:
+    st.markdown("### 🔌")
+    st.write("USB Serial")
 
-        st.session_state["mission_result"] = result
+with col5:
+    st.markdown("### 🚀")
+    st.write("실제 Rover")
 
 
-# --------------------------------------------------
-# AI 분석 결과
-# --------------------------------------------------
+st.divider()
 
-if "mission_result" in st.session_state:
 
-    result = st.session_state["mission_result"]
+# =========================================================
+# 현재 상태
+# =========================================================
 
-    st.header("🤖 AI 탐사 판단")
+st.header("📡 현재 탐사 상태")
+
+if st.session_state.ai_result is None:
+
+    st.info(
+        "아직 AI 탐사 판단이 실행되지 않았습니다.\n\n"
+        "왼쪽 메뉴에서 **🤖 AI 탐사 임무** 페이지로 이동하세요."
+    )
+
+else:
+
+    result = st.session_state.ai_result
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.metric(
-            "추천 행동",
+            "최근 주행 명령",
             result["action"]
         )
 
     with col2:
         st.metric(
-            "추천 속도",
-            f'{result["speed"]}%'
+            "주행 속도",
+            f"{result['speed']}%"
         )
 
     with col3:
@@ -155,90 +116,110 @@ if "mission_result" in st.session_state:
             result["risk"]
         )
 
-    st.info(result["reason"])
+    st.info(
+        f"🧠 Gemini 판단: {result['reason']}"
+    )
+
+
+# =========================================================
+# 최근 환경
+# =========================================================
+
+if st.session_state.last_environment:
 
     st.divider()
 
-    st.header("🚀 실제 로버 실행")
+    st.header("🌍 최근 분석 환경")
 
-    st.warning(
-        "실행 버튼을 누르면 AI의 판단이 실제 로버의 모터로 전달됩니다."
-    )
+    env = st.session_state.last_environment
 
-    if st.button(
-        "🚀 AI 추천 주행 실행",
-        type="primary",
-        use_container_width=True
-    ):
+    col1, col2, col3, col4 = st.columns(4)
 
-        action = result["action"]
-        speed = result["speed"]
-
-        # ------------------------------------------
-        # 추가 안전장치
-        # ------------------------------------------
-
-        # 경사가 너무 높으면 속도를 강제로 제한
-        if slope >= 20:
-            speed = min(speed, 30)
-
-        # 장애물이 있으면 무조건 정지
-        if obstacle == "있음":
-            action = "STOP"
-            speed = 0
-
-        # 배터리가 매우 낮으면 정지
-        if battery <= 10:
-            action = "STOP"
-            speed = 0
-
-        command_result = publish_rover_command(
-            action=action,
-            speed=speed
+    with col1:
+        st.metric(
+            "지형",
+            env["terrain"]
         )
 
-        if command_result["success"]:
+    with col2:
+        st.metric(
+            "경사도",
+            f"{env['slope']}°"
+        )
 
-            st.success(
-                f"명령 전달 완료: {action} / 속도 {speed}%"
-            )
+    with col3:
+        st.metric(
+            "배터리",
+            f"{env['battery']}%"
+        )
 
-        else:
+    with col4:
+        st.metric(
+            "장애물",
+            env["obstacle"]
+        )
 
-            st.error(
-                command_result["message"]
-            )
 
-
-# --------------------------------------------------
-# 시스템 설명
-# --------------------------------------------------
+# =========================================================
+# 탐사 기록 개수
+# =========================================================
 
 st.divider()
 
-st.header("⚙️ 시스템 구조")
+st.header("📊 탐사 통계")
 
-st.code(
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "AI 탐사 판단 횟수",
+        len(st.session_state.mission_history)
+    )
+
+with col2:
+
+    if st.session_state.mission_history:
+
+        executed = sum(
+            1
+            for item in st.session_state.mission_history
+            if item["executed"]
+        )
+
+    else:
+
+        executed = 0
+
+    st.metric(
+        "실제 로버 실행 횟수",
+        executed
+    )
+
+
+# =========================================================
+# 프로젝트 목적
+# =========================================================
+
+st.divider()
+
+st.header("🎯 프로젝트 목적")
+
+st.write(
     """
-Streamlit
-    ↓
-AI 환경 분석
-    ↓
-안전 규칙 검사
-    ↓
-MQTT Cloud
-    ↓
-ESP32
-    ↓
-L298N 모터 드라이버
-    ↓
-DC 모터 × 2
-    ↓
-Mars Rover
-""",
-    language="text"
+    이 프로젝트는 단순한 AI 챗봇이 아니라
+    **AI의 판단을 실제 로봇 시스템의 행동으로 연결하는 것**을
+    목표로 합니다.
+
+    Gemini AI가 화성 환경을 분석하고 주행 전략을 결정한 뒤,
+    프로그램이 안전 조건을 다시 확인하고,
+    최종 명령을 ESP32로 전달합니다.
+
+    따라서 인공지능, Python 프로그래밍, 임베디드 시스템,
+    모터 제어를 하나의 시스템으로 연결할 수 있습니다.
+    """
 )
 
+
 st.caption(
-    "※ 본 프로젝트는 실제 화성 환경이 아닌 교육용 시뮬레이션입니다."
+    "MARS-AI Rover | AI Decision → Safety Check → ESP32 → Motor"
 )
