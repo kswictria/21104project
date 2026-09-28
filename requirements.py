@@ -1,4 +1,5 @@
-plotly
 streamlit
-requests
-paho-mqtt==2.1.0
+google-genai
+pyserial
+pydantic
+pandas
