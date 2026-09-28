@@ -1,6 +1,7 @@
 import streamlit as st
 import serial
 from serial.tools import list_ports
+from datetime import datetime
 
 from ai import ask_gemini
 from motor import send_command
